@@ -1,0 +1,113 @@
+# =============================================================
+# Wind Turbine Edge Processing Pipeline — Configuration
+# =============================================================
+# This file controls all aspects of the edge pipeline:
+#   data source, signal processing, feature extraction,
+#   database connection, and logging.
+#
+# Sensitive values use ${VAR} syntax and are resolved from
+# environment variables at runtime (see settings.py).
+# =============================================================
+
+turbine:
+  id: "WT-001"
+
+# ----- Data source -----
+data_source:
+  mat_directory: "./data"
+  file_pattern: "*.mat"
+
+# ----- TimescaleDB connection -----
+database:
+  host: "${DB_HOST}"
+  port: 5432
+  dbname: "${DB_NAME}"
+  user: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  batch_size: 50              # Rows per batch insert
+
+# ----- Processing mode -----
+processing:
+  mode: "batch"               # "batch" = process all files once
+  output_hz: 1.0              # Output feature vector rate (Hz)
+
+# ----- Signal preprocessing -----
+preprocessing:
+  detrend: true
+  bandstop:
+    enabled: false
+    low_hz: null
+    high_hz: null
+
+# ----- Windowing (shared) -----
+windowing:
+  overlap_ratio: 0.50         # 50% overlap for ALL groups (per project report)
+  drop_last: true
+
+# ----- Sensor groups (per Fraunhofer LBF dataset) -----
+# Total features: 96 + 45 + 195 + 90 = 426
+sensor_groups:
+
+  bearing:
+    sampling_rate_hz: 74000
+    window_size_seconds: 1.0
+    representation: fft
+    channels:
+      - brng_f_x
+      - brng_f_y
+      - brng_f_z
+      - brng_r_x
+      - brng_r_y
+      - brng_r_z
+    band_energy_edges_hz: [0, 500, 1000, 2000, 5000, 10000, 20000, 37000]
+    # 9 spectral stats + 7 bands = 16 features/channel × 6 channels = 96
+
+  nacelle:
+    sampling_rate_hz: 37000
+    window_size_seconds: 1.0
+    representation: fft
+    channels:
+      - Nacl_x
+      - Nacl_y
+      - Nacl_z
+    band_energy_edges_hz: [0, 500, 1000, 2000, 5000, 10000, 18500]
+    # 9 spectral stats + 6 bands = 15 features/channel × 3 channels = 45
+
+  tower_tach:
+    sampling_rate_hz: 2960
+    window_size_seconds: 5.0
+    representation: fft
+    channels:
+      - tach
+      - bot_f_x
+      - bot_f_y
+      - bot_f_z
+      - bot_r_x
+      - bot_r_y
+      - bot_r_z
+      - top_l_x
+      - top_l_y
+      - top_l_z
+      - top_r_x
+      - top_r_y
+      - top_r_z
+    band_energy_edges_hz: [0, 10, 30, 80, 200, 500, 1480]
+    # 9 spectral stats + 6 bands = 15 features/channel × 13 channels = 195
+
+  slow:
+    sampling_rate_hz: 1480
+    window_size_seconds: 5.0
+    representation: time
+    channels:
+      - tmp_amb
+      - tmp_brng_f
+      - tmp_brng_r
+      - anm_mst
+      - anm_roof
+      - van
+    # 15 time-domain features/channel × 6 channels = 90
+
+# ----- Logging -----
+logging:
+  level: "INFO"
+  file: "logs/edge_pipeline.log"
