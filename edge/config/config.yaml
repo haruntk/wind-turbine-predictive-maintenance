@@ -17,14 +17,17 @@ data_source:
   mat_directory: "./data"
   file_pattern: "*.mat"
 
-# ----- TimescaleDB connection -----
-database:
-  host: "${DB_HOST}"
-  port: 5432
-  dbname: "${DB_NAME}"
-  user: "${DB_USER}"
-  password: "${DB_PASSWORD}"
-  batch_size: 50              # Rows per batch insert
+# ----- MQTT broker (Google Cloud Compute Engine) -----
+mqtt:
+  host: "${MQTT_HOST}"                      # GCE VM external IP / hostname
+  port: 8883                                 # 8883 = TLS, 1883 = plain
+  topic_prefix: "turbines"                   # topic: turbines/{turbine_id}/features
+  qos: 1                                     # at-least-once delivery
+  tls: true
+  ca_cert: "${MQTT_CA_CERT_PATH}"           # path to CA certificate on Jetson
+  username: "${MQTT_USER}"
+  password: "${MQTT_PASSWORD}"
+  batch_size: 50                             # vectors per publish call
 
 # ----- Processing mode -----
 processing:
@@ -50,7 +53,7 @@ sensor_groups:
 
   bearing:
     sampling_rate_hz: 74000
-    window_size_seconds: 1.0
+    window_size_seconds: 5.0
     representation: fft
     channels:
       - brng_f_x
@@ -64,7 +67,7 @@ sensor_groups:
 
   nacelle:
     sampling_rate_hz: 37000
-    window_size_seconds: 1.0
+    window_size_seconds: 5.0
     representation: fft
     channels:
       - Nacl_x

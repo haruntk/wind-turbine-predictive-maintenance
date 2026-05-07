@@ -1,0 +1,52 @@
+services:
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: wt-mosquitto
+    ports:
+      - "8883:8883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/passwd:/mosquitto/config/passwd:ro
+      - ./certs:/mosquitto/config/certs:ro
+      - mosquitto-data:/mosquitto/data
+    restart: unless-stopped
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: wt-timescaledb
+    environment:
+      POSTGRES_DB: edge_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  bridge:
+    build: ./cloud/bridge
+    container_name: wt-bridge
+    depends_on:
+      - mosquitto
+      - timescaledb
+    environment:
+      MQTT_HOST: ${MQTT_HOST}
+      MQTT_PORT: 8883
+      MQTT_TLS: "true"
+      MQTT_CA_CERT_PATH: /certs/ca.crt
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      DB_HOST: timescaledb
+      DB_PORT: 5432
+      DB_NAME: edge_db
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./certs:/certs:ro
+    restart: unless-stopped
+
+volumes:
+  mosquitto-data:
+  timescale-data:

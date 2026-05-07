@@ -63,3 +63,13 @@ htmlcov/
 *.spec
 MANIFEST
 wheels/
+
+# ----- TLS Sertifikaları (özel anahtarlar repoya girmez) -----
+certs/ca.key
+certs/broker.key
+certs/broker.crt
+certs/*.srl
+certs/*.csr
+
+# ----- Mosquitto şifre dosyası -----
+mosquitto/passwd

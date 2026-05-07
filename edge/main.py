@@ -34,6 +34,7 @@ from edge.config.channel_groups import load_groups_from_config
 from edge.config.settings import load_config, validate_config
 from edge.data_ingestion.data_loader import load_batch
 from edge.data_sender.db_client import TimescaleDBClient
+from edge.data_sender.mqtt_publisher import MQTTPublisher
 from edge.feature_extraction.vector_assembler import (
     EXPECTED_FEATURE_DIM,
     assemble_feature_vectors,
@@ -107,12 +108,11 @@ def _process_file(
     signals: dict[str, np.ndarray],
     groups: list,
     config: dict[str, Any],
-    db_client: TimescaleDBClient | None,
-    turbine_id: str,
+    sender: TimescaleDBClient | MQTTPublisher | None,
     dry_run: bool,
     file_index: int = 0,
 ) -> int:
-    """Process a single .mat file and insert vectors into DB.
+    """Process a single .mat file and send vectors via the active transport.
 
     Returns the number of feature vectors produced.
     """
@@ -131,7 +131,6 @@ def _process_file(
         _LOG.warning("No feature vectors produced for %s.", file_path.name)
         return 0
 
-    # Validate dimensions
     bad_dims = [v for v in vectors if len(v) != EXPECTED_FEATURE_DIM]
     if bad_dims:
         _LOG.error(
@@ -149,35 +148,43 @@ def _process_file(
     )
 
     if dry_run:
-        _LOG.info("[DRY RUN] Skipping database insert.")
+        _LOG.info("[DRY RUN] Skipping send.")
         return len(vectors)
 
-    # Build records with timestamps — each file gets a unique base time
-    # offset by file_index * 1000 seconds to avoid collisions across files
+    # Build records — each file gets a unique base time to avoid timestamp collisions
     base_time = datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(
         seconds=len(vectors)
     ) + timedelta(seconds=file_index * 1000)
 
-    batch_size: int = config.get("database", {}).get("batch_size", 50)
-    records: list[tuple[datetime, np.ndarray]] = []
+    transport_cfg = config.get("mqtt", config.get("database", {}))
+    batch_size: int = int(transport_cfg.get("batch_size", 50))
+
+    use_mqtt = isinstance(sender, MQTTPublisher)
+    mqtt_records: list[tuple[datetime, np.ndarray, str]] = []
+    db_records: list[tuple[datetime, np.ndarray]] = []
 
     for idx, vector in enumerate(vectors):
         ts = base_time + timedelta(seconds=idx)
-        records.append((ts, vector))
-
-        if len(records) >= batch_size:
-            db_client.insert_feature_vectors_batch(records)
-            records.clear()
+        if use_mqtt:
+            mqtt_records.append((ts, vector, scenario_label))
+            if len(mqtt_records) >= batch_size:
+                sender.publish_feature_vectors_batch(mqtt_records)
+                mqtt_records.clear()
+        else:
+            db_records.append((ts, vector))
+            if len(db_records) >= batch_size:
+                sender.insert_feature_vectors_batch(db_records)
+                db_records.clear()
 
     # Flush remaining
-    if records and db_client is not None:
-        db_client.insert_feature_vectors_batch(records)
+    if sender is not None:
+        if use_mqtt and mqtt_records:
+            sender.publish_feature_vectors_batch(mqtt_records)
+        elif not use_mqtt and db_records:
+            sender.insert_feature_vectors_batch(db_records)
 
-    _LOG.info(
-        "Inserted %d vectors into TimescaleDB for %s.",
-        len(vectors),
-        file_path.name,
-    )
+    transport = "MQTT" if use_mqtt else "TimescaleDB"
+    _LOG.info("Sent %d vectors via %s for %s.", len(vectors), transport, file_path.name)
 
     return len(vectors)
 
@@ -234,20 +241,26 @@ def run_pipeline(config_path: str, mode: str = "batch", dry_run: bool = False) -
         "file_pattern", "*.mat"
     )
 
-    # --- Setup DB connection ---
-    db_client: TimescaleDBClient | None = None
+    # --- Setup transport (MQTT preferred, direct DB as fallback) ---
+    sender: MQTTPublisher | TimescaleDBClient | None = None
     if not dry_run:
-        try:
-            db_client = TimescaleDBClient.from_config(config)
-            db_client.connect()
-            db_client.ensure_schema()
-        except Exception:
-            _LOG.error(
-                "Cannot connect to TimescaleDB. "
-                "Use --dry-run to process without DB.",
-                exc_info=True,
-            )
-            return
+        if "mqtt" in config:
+            try:
+                sender = MQTTPublisher.from_config(config, turbine_id=turbine_id)
+                sender.connect()
+                _LOG.info("Transport: MQTT → %s", config["mqtt"]["host"])
+            except Exception:
+                _LOG.error("Cannot connect to MQTT broker. Use --dry-run to skip.", exc_info=True)
+                return
+        elif "database" in config:
+            try:
+                sender = TimescaleDBClient.from_config(config)
+                sender.connect()
+                sender.ensure_schema()
+                _LOG.info("Transport: direct TimescaleDB → %s", config["database"]["host"])
+            except Exception:
+                _LOG.error("Cannot connect to TimescaleDB. Use --dry-run to skip.", exc_info=True)
+                return
 
     # --- Process files ---
     total_files = 0
@@ -266,8 +279,7 @@ def run_pipeline(config_path: str, mode: str = "batch", dry_run: bool = False) -
                     signals=signals,
                     groups=groups,
                     config=config,
-                    db_client=db_client,
-                    turbine_id=turbine_id,
+                    sender=sender,
                     dry_run=dry_run,
                     file_index=total_files,
                 )
@@ -281,8 +293,8 @@ def run_pipeline(config_path: str, mode: str = "batch", dry_run: bool = False) -
                 )
 
     finally:
-        if db_client is not None:
-            db_client.disconnect()
+        if sender is not None:
+            sender.disconnect()
 
     elapsed = time.perf_counter() - t_start
     _LOG.info("=" * 60)

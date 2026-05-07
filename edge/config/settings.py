@@ -136,7 +136,6 @@ def validate_config(config: dict[str, Any]) -> None:
     """
     required_sections = [
         "turbine",
-        "database",
         "sensor_groups",
         "windowing",
     ]
@@ -146,13 +145,27 @@ def validate_config(config: dict[str, Any]) -> None:
                 f"Missing required configuration section: '{section}'"
             )
 
-    # Validate database section
-    db = config["database"]
-    for field in ("host", "port", "dbname", "user", "password"):
-        if field not in db:
-            raise ValueError(
-                f"Missing required database field: 'database.{field}'"
-            )
+    # Exactly one transport must be configured: mqtt or database
+    has_mqtt = "mqtt" in config
+    has_db = "database" in config
+    if not has_mqtt and not has_db:
+        raise ValueError(
+            "Config must contain either an 'mqtt' section or a 'database' section."
+        )
+
+    if has_mqtt:
+        mqtt = config["mqtt"]
+        for field in ("host", "port"):
+            if field not in mqtt:
+                raise ValueError(f"Missing required mqtt field: 'mqtt.{field}'")
+
+    if has_db:
+        db = config["database"]
+        for field in ("host", "port", "dbname", "user", "password"):
+            if field not in db:
+                raise ValueError(
+                    f"Missing required database field: 'database.{field}'"
+                )
 
     # Validate sensor groups
     groups = config["sensor_groups"]
