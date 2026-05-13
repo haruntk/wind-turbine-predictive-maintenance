@@ -66,6 +66,7 @@ wheels/
 
 # ----- TLS Sertifikaları (özel anahtarlar repoya girmez) -----
 certs/ca.key
+certs/ca.crt
 certs/broker.key
 certs/broker.crt
 certs/*.srl
