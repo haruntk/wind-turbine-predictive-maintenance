@@ -18,7 +18,7 @@ Payload schema:
 
 from __future__ import annotations
 
-import json
+import msgpack
 import threading
 from datetime import datetime
 from typing import Any
@@ -154,14 +154,14 @@ class MQTTPublisher:
             return
 
         for ts, features, scenario_label in records:
-            payload = json.dumps(
+            payload = msgpack.packb(
                 {
                     "turbine_id": self._turbine_id,
                     "timestamp": ts.isoformat(),
                     "scenario_label": scenario_label,
                     "features": features.tolist(),
                 },
-                separators=(",", ":"),  # compact — reduces bandwidth
+                use_bin_type=True
             )
             self._client.publish(self._topic, payload, qos=self._qos)
 

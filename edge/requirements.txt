@@ -4,3 +4,4 @@ PyYAML>=6.0
 psycopg2-binary>=2.9
 h5py>=3.9
 tqdm>=4.66
+msgpack>=1.0.8

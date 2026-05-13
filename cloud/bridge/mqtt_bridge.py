@@ -33,7 +33,7 @@ Usage:
 
 from __future__ import annotations
 
-import json
+import msgpack
 import logging
 import os
 import signal
@@ -178,9 +178,9 @@ class Bridge:
 
     def _on_message(self, client, userdata, msg: mqtt.MQTTMessage) -> None:
         try:
-            data = json.loads(msg.payload)
-        except json.JSONDecodeError:
-            _LOG.warning("Non-JSON payload on %s — ignored.", msg.topic)
+            data = msgpack.unpackb(msg.payload, raw=False)
+        except Exception as e:
+            _LOG.warning("Non-MsgPack payload on %s — ignored (%s).", msg.topic, e)
             return
 
         turbine_id: str = data.get("turbine_id", "unknown")
