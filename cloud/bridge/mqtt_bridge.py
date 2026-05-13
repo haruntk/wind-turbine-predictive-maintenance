@@ -77,10 +77,8 @@ def _ensure_schema(conn: psycopg2.extensions.connection) -> None:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS feature_vectors (
                 time           TIMESTAMPTZ        NOT NULL,
-                turbine_id     TEXT               NOT NULL,
-                scenario_label TEXT               NOT NULL DEFAULT 'unknown',
-                features       DOUBLE PRECISION[] NOT NULL,
-                created_at     TIMESTAMPTZ        DEFAULT CURRENT_TIMESTAMP
+                scenario_label TEXT               DEFAULT 'unknown',
+                features       DOUBLE PRECISION[] NOT NULL
             );
         """)
         # Make it a TimescaleDB hypertable (idempotent)
@@ -91,8 +89,10 @@ def _ensure_schema(conn: psycopg2.extensions.connection) -> None:
             );
         """)
         cur.execute("""
-            CREATE INDEX IF NOT EXISTS idx_fv_turbine_time
-                ON feature_vectors (turbine_id, time DESC);
+            CREATE INDEX IF NOT EXISTS idx_fv_time ON feature_vectors (time DESC);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_fv_scenario ON feature_vectors (scenario_label, time DESC);
         """)
     conn.commit()
     _LOG.info("Schema verified / created.")
@@ -100,18 +100,16 @@ def _ensure_schema(conn: psycopg2.extensions.connection) -> None:
 
 def _insert(
     conn: psycopg2.extensions.connection,
-    turbine_id: str,
     timestamp: datetime,
     scenario_label: str,
     features: list[float],
 ) -> None:
     sql = """
-        INSERT INTO feature_vectors (time, turbine_id, scenario_label, features)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT DO NOTHING
+        INSERT INTO feature_vectors (time, scenario_label, features)
+        VALUES (%s, %s, %s)
     """
     with conn.cursor() as cur:
-        cur.execute(sql, (timestamp, turbine_id, scenario_label, features))
+        cur.execute(sql, (timestamp, scenario_label, features))
     conn.commit()
 
 
@@ -201,13 +199,13 @@ class Bridge:
             timestamp = datetime.now(tz=timezone.utc)
 
         try:
-            _insert(self._conn, turbine_id, timestamp, scenario_label, features)
+            _insert(self._conn, timestamp, scenario_label, features)
             _LOG.debug("Inserted vector from %s at %s.", turbine_id, timestamp.isoformat())
         except Exception:
             _LOG.error("DB insert failed — attempting reconnect.", exc_info=True)
             try:
                 self._conn = _db_connect()
-                _insert(self._conn, turbine_id, timestamp, scenario_label, features)
+                _insert(self._conn, timestamp, scenario_label, features)
             except Exception:
                 _LOG.error("Reconnect failed. Vector dropped.", exc_info=True)
 
