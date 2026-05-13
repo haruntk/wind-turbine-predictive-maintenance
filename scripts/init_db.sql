@@ -130,7 +130,7 @@ CREATE TRIGGER trg_auto_log_anomaly
 -- =============================================================
 -- SP-1: LSTM girdisi — son N feature vector
 CREATE OR REPLACE FUNCTION sp_get_latest_features(p_limit INTEGER DEFAULT 20)
-RETURNS TABLE (time TIMESTAMPTZ, features DOUBLE PRECISION[]) AS $$
+RETURNS TABLE ("time" TIMESTAMPTZ, features DOUBLE PRECISION[]) AS $$
 BEGIN
     RETURN QUERY
     SELECT fv.time, fv.features FROM feature_vectors fv
@@ -140,7 +140,7 @@ END; $$ LANGUAGE plpgsql;
 -- SP-2: Zaman aralığı + senaryo filtresi
 CREATE OR REPLACE FUNCTION sp_get_features_by_range(
     p_start TIMESTAMPTZ, p_end TIMESTAMPTZ, p_scenario TEXT DEFAULT NULL
-) RETURNS TABLE (time TIMESTAMPTZ, scenario_label TEXT, features DOUBLE PRECISION[]) AS $$
+) RETURNS TABLE ("time" TIMESTAMPTZ, scenario_label TEXT, features DOUBLE PRECISION[]) AS $$
 BEGIN
     RETURN QUERY
     SELECT fv.time, fv.scenario_label, fv.features FROM feature_vectors fv
